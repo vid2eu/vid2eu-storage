@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:alpine
+    container_name: vid2eu
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: vid2eu
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+volumes:
+  pgdata:

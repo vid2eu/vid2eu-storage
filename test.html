@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Player</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 35px 20px;
+            background: #101114;
+            color: #eee;
+            font-family: Inter, system-ui, sans-serif;
+        }
+
+        main {
+            width: 100%;
+            max-width: 1050px;
+            margin: auto;
+        }
+
+        h1 {
+            font-size: 22px;
+            margin-bottom: 24px;
+        }
+
+        .config {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        input,
+        select,
+        button {
+            background: #22242a;
+            color: white;
+            border: 1px solid #383a42;
+            padding: 10px 12px;
+            border-radius: 6px;
+            font: inherit;
+        }
+
+        input {
+            flex: 1;
+            min-width: 180px;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #343740;
+        }
+
+        .primary {
+            background: #7558e8;
+            border-color: #7558e8;
+        }
+
+        .player {
+            position: relative;
+            background: black;
+            border-radius: 10px;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        video {
+            width: 100%;
+            display: block;
+            aspect-ratio: 16 / 9;
+            max-height: 650px;
+            background: black;
+        }
+
+        .overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        .spinner {
+            width: 42px;
+            height: 42px;
+            border: 4px solid #ffffff33;
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin .8s linear infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .controls {
+            padding: 12px;
+            background: #1b1c21;
+        }
+
+        .progress {
+            width: 100%;
+            height: 6px;
+            background: #41434a;
+            border-radius: 10px;
+            cursor: pointer;
+            margin-bottom: 12px;
+            position: relative;
+        }
+
+        .progress-buffer {
+            position: absolute;
+            height: 100%;
+            background: #777;
+            width: 0%;
+            border-radius: 10px;
+        }
+
+        .progress-played {
+            position: absolute;
+            height: 100%;
+            background: #9077ff;
+            width: 0%;
+            border-radius: 10px;
+        }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .control-row button {
+            border: none;
+            background: transparent;
+            padding: 6px;
+            font-size: 17px;
+        }
+
+        .time {
+            font-size: 13px;
+            color: #bbb;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .spacer {
+            flex: 1;
+        }
+
+        select {
+            padding: 7px 9px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .volume {
+            width: 85px;
+            accent-color: #9077ff;
+        }
+
+        .status {
+            margin-top: 14px;
+            color: #aaa;
+            font-size: 13px;
+            overflow-wrap: anywhere;
+        }
+
+        .debug {
+            margin-top: 25px;
+            background: #191a1f;
+            border: 1px solid #303138;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .debug-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .debug h3 {
+            margin: 0;
+            font-size: 14px;
+        }
+
+        #logs {
+            max-height: 220px;
+            overflow: auto;
+            font: 12px monospace;
+            color: #b5b5bd;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .log {
+            padding: 4px 0;
+            border-bottom: 1px solid #292a30;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .stat {
+            background: #222329;
+            padding: 12px;
+            border-radius: 6px;
+        }
+
+        .stat small {
+            color: #999;
+            display: block;
+        }
+
+        .stat strong {
+            font-size: 14px;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 20px 12px;
+            }
+
+            .volume {
+                width: 65px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main>
+        <h1>Video Stream Tester</h1>
+
+        <div class="config">
+            <input id="videoId" placeholder="Video ID" value="64448cbc-595a-40eb-993a-b79d4e5e6f9b">
+
+            <select id="baseUrl">
+                <option value="http://localhost:3001/stream">Local API :3001</option>
+            </select>
+
+            <button class="primary" id="load">Load video</button>
+        </div>
+
+        <div class="player" id="playerContainer">
+            <video id="video" playsinline preload="metadata"></video>
+
+            <div class="overlay">
+                <div class="spinner" id="spinner"></div>
+            </div>
+
+            <div class="controls">
+                <div class="progress" id="progress">
+                    <div class="progress-buffer" id="buffer"></div>
+                    <div class="progress-played" id="played"></div>
+                </div>
+
+                <div class="control-row">
+                    <button id="play" title="Play/Pause (Space)">▶</button>
+                    <button id="back" title="Back 10 seconds">↶</button>
+                    <button id="forward" title="Forward 10 seconds">↷</button>
+
+                    <span class="time" id="time">00:00 / 00:00</span>
+
+                    <button id="mute" title="Mute">🔊</button>
+                    <input class="volume" id="volume" type="range" min="0" max="1" step="0.05" value="1">
+
+                    <div class="spacer"></div>
+
+                    <select id="quality" title="Video quality">
+                        <option value="720p">720p</option>
+                        <option value="480p">480p</option>
+                    </select>
+
+                    <select id="speed" title="Playback speed">
+                        <option value="0.5">0.5x</option>
+                        <option value="0.75">0.75x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="1.25">1.25x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="1.75">1.75x</option>
+                        <option value="2">2x</option>
+                    </select>
+
+                    <button id="pip" title="Picture in picture">▣</button>
+                    <button id="fullscreen" title="Fullscreen">⛶</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="status" id="status">Ready</div>
+
+        <div class="stats">
+            <div class="stat">
+                <small>Current quality</small>
+                <strong id="statQuality">720p</strong>
+            </div>
+            <div class="stat">
+                <small>Resolution</small>
+                <strong id="statResolution">-</strong>
+            </div>
+            <div class="stat">
+                <small>Playback state</small>
+                <strong id="statState">Idle</strong>
+            </div>
+            <div class="stat">
+                <small>Buffered</small>
+                <strong id="statBuffered">0%</strong>
+            </div>
+        </div>
+
+        <div class="debug">
+            <div class="debug-header">
+                <h3>Debug console</h3>
+                <button id="clearLogs">Clear</button>
+            </div>
+            <div id="logs"></div>
+        </div>
+    </main>
+
+    <script>
+        const video = document.getElementById('video');
+        const $ = id => document.getElementById(id);
+
+        let currentUrl = null;
+        let isSeeking = false;
+
+        function log(message, data = '') {
+            const row = document.createElement('div');
+            row.className = 'log';
+            row.textContent =
+                `[${new Date().toLocaleTimeString()}] ${message} ${typeof data === 'object' ? JSON.stringify(data) : data
+                }`;
+
+            $('logs').prepend(row);
+        }
+
+        function formatTime(seconds) {
+            if (!Number.isFinite(seconds)) return '00:00';
+
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+
+            return h > 0
+                ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+                : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        function getUrl(quality = $('quality').value) {
+            const id = $('videoId').value.trim();
+            const base = $('baseUrl').value.replace(/\/$/, '');
+
+            return `${base}/${encodeURIComponent(id)}/${quality}`;
+        }
+
+        function loadVideo(autoplay = false) {
+            if (!$('videoId').value.trim()) {
+                alert('Enter a video ID');
+                return;
+            }
+
+            const url = getUrl();
+
+            currentUrl = url;
+            video.src = url;
+            video.load();
+
+            $('statQuality').textContent = $('quality').value;
+            $('status').textContent = `Loading ${url}`;
+
+            log('Loading video', url);
+
+            if (autoplay) {
+                video.play().catch(error => log('Autoplay failed', error.message));
+            }
+        }
+
+        function changeQuality() {
+            if (!currentUrl) return;
+
+            const wasPlaying = !video.paused;
+            const oldTime = video.currentTime;
+            const oldDuration = video.duration;
+            const oldSpeed = video.playbackRate;
+            const quality = $('quality').value;
+            const newUrl = getUrl(quality);
+
+            if (newUrl === currentUrl) return;
+
+            log('Switching quality', {
+                quality,
+                oldTime,
+                wasPlaying
+            });
+
+            currentUrl = newUrl;
+            video.src = newUrl;
+            video.load();
+
+            video.addEventListener('loadedmetadata', function restore() {
+                video.removeEventListener('loadedmetadata', restore);
+
+                const target = Number.isFinite(video.duration)
+                    ? Math.min(oldTime, Math.max(0, video.duration - 0.1))
+                    : oldTime;
+
+                video.currentTime = target;
+                video.playbackRate = oldSpeed;
+
+                log('Quality switched', {
+                    quality,
+                    duration: video.duration,
+                    previousDuration: oldDuration,
+                    restoredPosition: target
+                });
+
+                if (wasPlaying) {
+                    video.play().catch(error => log('Resume failed', error.message));
+                }
+            });
+
+            $('statQuality').textContent = quality;
+        }
+
+        $('load').onclick = () => loadVideo();
+        $('quality').onchange = changeQuality;
+
+        $('play').onclick = () => {
+            if (video.paused) video.play();
+            else video.pause();
+        };
+
+        $('back').onclick = () => {
+            video.currentTime = Math.max(0, video.currentTime - 10);
+        };
+
+        $('forward').onclick = () => {
+            video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 10);
+        };
+
+        $('volume').oninput = event => {
+            video.volume = Number(event.target.value);
+            video.muted = video.volume === 0;
+        };
+
+        $('mute').onclick = () => {
+            video.muted = !video.muted;
+        };
+
+        $('speed').onchange = event => {
+            video.playbackRate = Number(event.target.value);
+            log('Playback speed changed', video.playbackRate);
+        };
+
+        $('fullscreen').onclick = async () => {
+            const container = $('playerContainer');
+
+            if (!document.fullscreenElement) {
+                await container.requestFullscreen();
+            } else {
+                await document.exitFullscreen();
+            }
+        };
+
+        $('pip').onclick = async () => {
+            try {
+                if (document.pictureInPictureElement) {
+                    await document.exitPictureInPicture();
+                } else {
+                    await video.requestPictureInPicture();
+                }
+            } catch (error) {
+                log('PiP error', error.message);
+            }
+        };
+
+        $('clearLogs').onclick = () => $('logs').replaceChildren();
+
+        $('progress').addEventListener('pointerdown', event => {
+            if (!Number.isFinite(video.duration)) return;
+
+            isSeeking = true;
+            seek(event);
+        });
+
+        $('progress').addEventListener('pointermove', event => {
+            if (isSeeking) seek(event);
+        });
+
+        window.addEventListener('pointerup', () => {
+            isSeeking = false;
+        });
+
+        function seek(event) {
+            const rect = $('progress').getBoundingClientRect();
+            const percent = Math.max(0, Math.min(1,
+                (event.clientX - rect.left) / rect.width
+            ));
+
+            video.currentTime = percent * video.duration;
+        }
+
+        document.addEventListener('keydown', event => {
+            if (['INPUT', 'SELECT'].includes(document.activeElement.tagName)) return;
+
+            if (event.code === 'Space') {
+                event.preventDefault();
+                video.paused ? video.play() : video.pause();
+            }
+
+            if (event.code === 'ArrowLeft') video.currentTime -= 5;
+            if (event.code === 'ArrowRight') video.currentTime += 5;
+            if (event.code === 'ArrowUp') video.volume = Math.min(1, video.volume + 0.1);
+            if (event.code === 'ArrowDown') video.volume = Math.max(0, video.volume - 0.1);
+            if (event.code === 'KeyM') video.muted = !video.muted;
+            if (event.code === 'KeyF') $('fullscreen').click();
+        });
+
+        video.addEventListener('loadstart', () => {
+            $('spinner').style.display = 'block';
+            $('status').textContent = 'Loading...';
+            log('Load started');
+        });
+
+        video.addEventListener('loadedmetadata', () => {
+            $('status').textContent = 'Metadata loaded';
+            $('statResolution').textContent =
+                `${video.videoWidth}x${video.videoHeight}`;
+
+            log('Metadata loaded', {
+                duration: video.duration,
+                width: video.videoWidth,
+                height: video.videoHeight
+            });
+        });
+
+        video.addEventListener('loadeddata', () => {
+            log('First frame loaded');
+        });
+
+        video.addEventListener('canplay', () => {
+            $('spinner').style.display = 'none';
+            $('status').textContent = 'Ready to play';
+            log('Can play');
+        });
+
+        video.addEventListener('playing', () => {
+            $('play').textContent = '❚❚';
+            $('spinner').style.display = 'none';
+            $('status').textContent = 'Playing';
+            $('statState').textContent = 'Playing';
+        });
+
+        video.addEventListener('pause', () => {
+            $('play').textContent = '▶';
+            $('statState').textContent = 'Paused';
+        });
+
+        video.addEventListener('waiting', () => {
+            $('spinner').style.display = 'block';
+            $('status').textContent = 'Buffering...';
+            log('Buffering');
+        });
+
+        video.addEventListener('stalled', () => log('Network stalled'));
+
+        video.addEventListener('suspend', () => log('Loading suspended'));
+
+        video.addEventListener('seeking', () => log('Seeking', video.currentTime));
+
+        video.addEventListener('seeked', () => log('Seek completed', video.currentTime));
+
+        video.addEventListener('ended', () => {
+            $('status').textContent = 'Playback ended';
+            $('statState').textContent = 'Ended';
+            log('Playback ended');
+        });
+
+        video.addEventListener('error', () => {
+            $('spinner').style.display = 'none';
+
+            const error = video.error;
+
+            const messages = {
+                1: 'Playback aborted',
+                2: 'Network error',
+                3: 'Video decoding error',
+                4: 'Unsupported media or invalid response'
+            };
+
+            const message = messages[error?.code] || 'Unknown error';
+
+            $('status').textContent = `Error: ${message}`;
+            $('statState').textContent = 'Error';
+
+            log('VIDEO ERROR', {
+                code: error?.code,
+                message: error?.message,
+                source: video.currentSrc
+            });
+        });
+
+        video.addEventListener('timeupdate', () => {
+            if (isSeeking) return;
+
+            const percent = video.duration
+                ? video.currentTime / video.duration * 100
+                : 0;
+
+            $('played').style.width = `${percent}%`;
+            $('time').textContent =
+                `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+        });
+
+        video.addEventListener('progress', () => {
+            if (!video.duration || !video.buffered.length) return;
+
+            const end = video.buffered.end(video.buffered.length - 1);
+            const percent = end / video.duration * 100;
+
+            $('buffer').style.width = `${percent}%`;
+            $('statBuffered').textContent = `${percent.toFixed(1)}%`;
+        });
+
+        video.addEventListener('volumechange', () => {
+            $('mute').textContent = video.muted || video.volume === 0 ? '🔇' : '🔊';
+            $('volume').value = video.muted ? 0 : video.volume;
+        });
+
+        video.addEventListener('ratechange', () => {
+            $('speed').value = String(video.playbackRate);
+        });
+
+        video.addEventListener('emptied', () => log('Media emptied'));
+        video.addEventListener('abort', () => log('Media request aborted'));
+
+        loadVideo();
+    </script>
+</body>
+
+</html>
